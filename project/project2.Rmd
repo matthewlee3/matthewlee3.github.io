@@ -1,0 +1,288 @@
+---
+title: 'Project 2: Modeling, Testing, and Predicting'
+author: "Matthew Lee, mtl967"
+date: ''
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
+
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE,fig.align="center",warning=FALSE,message=FALSE,fig.width=8, fig.height=5, linewidth=60)
+options(tibble.width = 100,width = 100)
+library(tidyverse)
+```
+
+# Modeling
+
+
+
+## My Data:
+```{R}
+library(tidyverse)
+crime <- read_csv("/stor/home/mtl967/project2data.csv")
+#Creating categorical variable with 2 groups:
+quantile(crime$Gini)
+crime<-crime%>%mutate(inequality_cat=ifelse(Gini>=0.4789, "high", ifelse(Gini<=0.4789 & 0.46735<=Gini, "med", "low")))
+#Creating a binary variable: 
+crime<-crime%>%mutate(violent_per_100k=(violent_crime_total/Population)*100000)%>%mutate(violent_crime_binary=ifelse(violent_per_100k>=median(violent_per_100k), 1, 0))
+#Create per 100k for each crime: 
+crime<-crime%>%mutate(prisoners_100k=(prisoner_count/Population)*100000, manslaughter_100k=(murder_manslaughter/Population)*100000, robbery_100k=(robbery/Population)*100000, agg_assault_100k=(agg_assault/Population)*100000, property_100k=(property_crime_total/Population)*100000, burglary_100k=(burglary/Population)*100000)
+#Class Diag:
+#Class Diag:
+class_diag<-function(probs,truth){
+  tab<-table(factor(probs>.5,levels=c("FALSE","TRUE")),truth)
+  acc=sum(diag(tab))/sum(tab)
+  sens=tab[2,2]/colSums(tab)[2]
+  spec=tab[1,1]/colSums(tab)[1]
+  ppv=tab[2,2]/rowSums(tab)[2]
+  f1=2*(sens*ppv)/(sens+ppv)
+
+  if(is.numeric(truth)==FALSE & is.logical(truth)==FALSE){
+    truth<-as.numeric(truth)-1}
+  
+  #CALCULATE EXACT AUC
+  ord<-order(probs, decreasing=TRUE)
+  probs <- probs[ord]; truth <- truth[ord]
+  
+  TPR=cumsum(truth)/max(1,sum(truth)) 
+  FPR=cumsum(!truth)/max(1,sum(!truth))
+  
+  dup<-c(probs[-1]>=probs[-length(probs)], FALSE)
+  TPR<-c(0,TPR[!dup],1); FPR<-c(0,FPR[!dup],1)
+  
+  n <- length(TPR)
+  auc<- sum( ((TPR[-1]+TPR[-n])/2) * (FPR[-1]-FPR[-n]) )
+
+  data.frame(acc,sens,spec,ppv,f1,auc)
+}
+```
+
+### 0. (5 pts)
+*My "crime" dataset is was aquired through kaggle. The source of the demographic data is from various sources such as the CDC, kff.org, and americashealthrankings.org. The source of the crime data is from the National Prisoners Statistics Program, which was administered by the Bureau of Justice Statistics in 2016. I chose this dataset because I'm interested to see how different socioeconomic factors may play into crime in each state. For instance, states with the most inequality may have higher crime rates. I also want to see if states with a higher income per capita have less crime across the board, and if population density plays a role in the amount of crime seen in states. The data is per state(observations), which is what I want to compare. As such there are 50 observations(states). *
+
+*This dataset includes the following socioeconomic variables: Population, Population density, Gini Inequality Index score, Income, and GDP. This data set includes the following crime variables: number of prisoners,violent crimes, manslaughter murders, robberies, aggrivated assault, property crimes, and burglaries. The crime variables measure the total number of each particular crime that occured in 2016 per state. I also created a categorical variable that gives either "high,""med," or "low" inequality values based on each state's Gini inequality index score. A high Gini score indicates high inequality. Furthermore, I created a binary variable, which assigns whether or not each state has high violent crimes. A value of 1 was given to each state that had a violent crimes per capita greater than or equal to the median, and a value of 0 was given to each state that did not.*
+
+*As mentioned before, the crime variables were total counts. Consequently, crimes in states like California will far outnumber other states, but that may simply be because of California's large population. Due to this, I created per 100k variables for each crime where I divided each crime total by population then multiplied by 100,000, giving crime per 100k for each state. This allowed me to more accurately see trends in my data and compare states.*
+
+### 1. (15 pts)
+
+```{R}
+#MANOVA:
+man1<-manova(cbind(Pop_Density, Income, violent_per_100k, prisoners_100k, manslaughter_100k,robbery_100k,agg_assault_100k, property_100k, burglary_100k)~inequality_cat, data=crime)
+#MANOVA Result
+summary(man1)
+#Overall MANOVA is significant, one-way ANOVA for each variable: 
+summary.aov(man1)
+#Post-hoc t-tests:
+pairwise.t.test(crime$Pop_Density, crime$inequality_cat,p.adj = "none")
+pairwise.t.test(crime$manslaughter_100k, crime$inequality_cat,p.adj = "none")
+#Probability of Type 1 error:
+1-.95^16
+#Adjusted p-value: 
+0.05/16
+#MANOVA assumptions:
+library(rstatix)
+group<-crime$inequality_cat
+DVs<-crime%>%select(Pop_Density, Income, violent_per_100k, prisoners_100k, manslaughter_100k,robbery_100k,agg_assault_100k, property_100k, burglary_100k)
+sapply(split(DVs,group), mshapiro_test)
+
+```
+
+*A MANOVA was conducted to determine the effect of socioeconomic inequality(high, med, low) on 9 dependent variables(Pop_Density, Income, violent_per_100k, prisoners_100k, manslaughter_100k,robbery_100k,agg_assault_100k, property_100k, burglary_100k). Significant differences were found among the three levels of inequality for at least one of the dependent variables, Pillai trace=0.57951, pseudo F(2,80)=1.8132, p=0.03765.*
+
+*I then performed univariate ANOVAs for each dependent variable as follow-up tests to the MANOVA. The univariate ANOVAs for manslaughters per 100k and population density initially appeared significant, (F=2,47)=4.21, p=0.021, and F(2,47)=3.95, p=0.026, respectively. However, after using the Bonferroni method for controlling Type I error rates for multiple comparisons, the adjusted significance level is 0.003125, so they are not significant. I performed 1 MANOVA, 9 ANOVAs, and 6 t-tests(16 tests). Because of this, the probability of at least one type I error(if unadjusted) is 55.99%. The adjusted significance level using Bonferroni correction is 0.003125.*
+
+*Due to their initial significance, I conducted pairwise comparisons to determine which levels of inequality differed in manslaughters per 100k and population density. High inequality and low inequality initially appeared to differ significantly from each other in terms of both population density and manslaughters per 100k, but they were not significant after adjusting for multiple comparisons(bonferroni α=0.05/16=0.003125). Furthermore, medium inequality and low inequality initially appeared to differ significantly from each other in terms of population density, but they were not significant after adjusting for multiple comparisons(bonferroni α=0.05/16=0.003125)*
+
+*The MANOVA assumptions were not likely to have been met. Firstly, I tested the assumption of multivariate normality of DVs. The null hypothesis of this test is that there is multivariate normality in each group, but each group had a p-value less than 0.001(reject this null). As such, it failed the assumption of multivariate normality for each group. Similarly, the MANOVA assumption of homogeneity of covariance matrices also likely failed. *
+
+### 2.(10 pts)
+
+```{R}
+crime<-crime%>%mutate(violent_level=ifelse(violent_crime_binary==1, "high", "low"))
+crime%>%group_by(violent_level)%>%summarize(m=mean(Income))%>%summarize(diff(m))
+#Mean Difference randomization test
+rand_dist<-vector()
+for (i in 1:5000) {
+    new <- data.frame(Income = sample(crime$Income), 
+        violent_level = crime$violent_level)
+    rand_dist[i] <- mean(new[new$violent_level == "high", ]$Income) - 
+        mean(new[new$violent_level == "low", ]$Income)
+}
+# Two-tailed p-value:
+mean(rand_dist< -2455.96 | rand_dist> 2455.96 ) 
+#Plot visualizing the null distribution:
+{hist(rand_dist,main="",ylab=""); abline(v = c(2455.96,-2455.96),col="red")}
+```
+*Null Hypothesis: The mean income per capita is the same for states with high levels of violent crimes vs. low levels of violent crimes. Alternative Hypothesis: The mean income per capita is different for states with high levels of violent crimes vs. low levels of violent crimes. I fail to reject the null hypothesis and conclude that the mean income per capita is the same for states with high levels of violent crimes vs. low levels of violent crimes(two-tailed p-value: 0.3034). The two-tailed p-value of 0.3034 is greater than the significance value of 0.05, which is why I fail to reject the null hypothesis. The actual observed test statistic(mean difference in income per capita) was 2455.96. In other words, the probability of getting a test statistic at least as big as the actual test statistic(mean difference) was not less than 0.05.*
+
+### 3. (35 pts)
+
+```{R}
+library(lmtest)
+library(sandwich)
+library(interactions)
+#Center numeric variables:
+crime1<-crime%>%mutate(prisoners_100k_c=crime$prisoners_100k-mean(crime$prisoners_100k, na.rm=T),Gini_c=crime$Gini-mean(crime$Gini, na.rm=T ))
+#Linear Regression:
+fit<-lm(robbery_100k~prisoners_100k_c*Gini_c, data=crime1)
+summary(fit)
+#Plot Regression:
+ggplot(crime1, aes(prisoners_100k, robbery_100k, color=Gini_c)) + geom_smooth(method="lm")+geom_point(size=3)+geom_vline(xintercept=mean(crime1$prisoners_100k))+scale_color_gradient(low="yellow", high="red")
+interact_plot(fit, prisoners_100k_c, Gini_c)
+#Linearity and Homoskedasticity Assumptions:
+resids<-fit$residuals; fitvals<-fit$fitted.values
+ggplot()+geom_point(aes(fitvals,resids))+geom_hline(yintercept=0, col="red")
+bptest(fit)
+#Normality Assumption:
+par(mfrow=c(1,2)); hist(resids); qqnorm(resids); qqline(resids, col='red')
+ks.test(resids, "pnorm", sd=sd(resids))
+#Robust Standard Errors:
+coeftest(fit, vcov = vcovHC(fit))
+#Proportion of the variation in the outcome explained by my model:
+(sum((crime1$robbery_100k-mean(crime1$robbery_100k))^2)-sum(fit$residuals^2))/sum((crime1$robbery_100k-mean(crime1$robbery_100k))^2)
+```
+*The predicted robberies per 100k people for a state with an average prisoners per 100k people and average Gini inequality index is 82.523. In states with an average Gini inequality index, for every one-unit increase in prisoners per 100k people, the predicted robberies per 100k people increases by 0.1397. In states with an average number of prisoners per 100k people, for every 0.01 increase in Gini inequality index, the predicted robberies per 100k people increases by 5.89. The effect of prisoners per 100k on robberies per 100k does not differ on the effect of the Gini inequality index.*
+
+*The assumptions of linearity, normality, and homoskedasticity were confirmed. Firstly, I took my fitted values and plotted them against the residuals to confirm linearity and homoskedasticity. Linearity was met as there was no obvious patterns. At first glance, I thought there may have been slight funneling, so I did conducted a Breusch-Pagan Test. I failed to reject the null hypothesis of homoskedasticity, so this assumption passed. Lastly, I created a histogram from model residuals in order to see if normality was met. Normality was met as the histogram was mound shaped. I conducted a One-sample Kolmogorov-Smirnov test to confirm normality, and I failed to reject the null hypothesis that normality was met, so this assumption passed as well.*
+
+*After recomputing regression results with robust standard errors, there was no difference in the predicted robberies per 100k people for a state with an average prisoners per 100k people and average Gini inequality index(still 82.523). Further, in states with an average Gini inequality index, the coefficient estimate stayed the same, but the p value decreased. For every one-unit increase in prisoners per 100k people, the predicted robberies per 100k people increases by 0.1397(significant, p<0.001, t=5.07). One change in significance was seen in states with an average number of prisoners per 100k people. For every 0.01 increase in Gini inequality index, the predicted robberies per 100k people increases by 5.89(not significant, p=0.083, t=1,7695). This was previously significant(p=0.0311), but after recomputing regression results with robust standard errors, this became not significant with p=0.083. The effect of prisoners per 100k on robberies per 100k does not differ on the effect of the Gini inequality index(p=0.5425, t=-0.614), and this was also not significant before recomputing the regression results with robust standard errors. The relationship for prisoners per 100k and robberies per 100k is strongest for lower Gini inequality index values(as seen in the interact plot), but again this is not significant((p=0.5425, t=-0.614)).*
+
+*My model explains 40.56% of the variation in the outcome. *
+
+### 4. (5 pts)
+```{R}
+fit<-lm(robbery_100k~prisoners_100k_c*Gini_c, data=crime1)
+resids<-fit$residuals
+fitted<-fit$fitted.values
+resid_resamp<-replicate(5000,{
+new_resids<-sample(resids,replace=TRUE)
+crime1$new_y<-fitted+new_resids 
+fit<-lm(new_y~prisoners_100k_c*Gini_c,data=crime1) 
+coef(fit) 
+})
+#Bootstrapped Ses(resampling residuals)
+resid_resamp%>%t%>%as.data.frame%>%summarize_all(sd)
+#Original SEs
+coeftest(fit)
+#Robust SEs
+coeftest(fit, vcov = vcovHC(fit))
+resid_resamp%>%t%>%as.data.frame%>%gather%>%group_by(key)%>%
+ summarize(lower=quantile(value,.025), upper=quantile(value,.975))
+```
+*My bootstrap standard error for the intercept was 5.16, which was less than the original intercept SE(SE=5.37) and less than the robust intercept SE(SE=5.7). Furthermore, my bootstrap standard error for prisoners_100k_c(SE=0.0272) was slightly smaller than the original SE(SE=0.0286). Compared to the original, this means the bootstrap prisoners per 100k p-value is also slightly smaller(slightly more significant) than the p-value seen in the original. Also, the bootstrap standard error for centered prisoners per 100k is smaller than the robust standard error(SE=0.0275), so the bootstrap p-value is likely slightly smaller and slightly more significant as well.*
+
+*The bootstrap standard error for centered Gini inequality is 254.65, which is less than the original standard error(SE=264.86) and less than the robust standard error(SE=332.88). As such, the bootstrap p-value is smaller and slightly more significant than both.*
+
+*The bootstrap standard error for the interaction is 1.56, which is smaller than the original SE(SE=1.62) and robust standard error(SE=2.50). Although it likely still not significant, the bootstrap p-value is smaller as the standard error was smaller.*
+
+
+### 5. (25 pts) 
+```{R}
+library(lmtest)
+fit1<-glm(violent_crime_binary~Gini+manslaughter_100k, data=crime, family="binomial")
+coeftest(fit1)
+#Predicted Probabilities
+prob<-predict(fit1,type="response") 
+#Confusion Matrix:
+table(predict=as.numeric(prob>.5),truth=crime$violent_crime_binary)%>%addmargins
+#Calculate Accuracy, TPR, TNR, PPV, and AUC:
+class_diag(prob,crime$violent_crime_binary)
+#Sensitivity(TPR):
+20/25
+#Specificity(TNR):
+19/25
+#Precision:
+20/26
+#Density Plot of the log-odds:
+crime1$logit<-predict(fit1,type="link") 
+crime1$violent_crime_binf<-as.factor(crime1$violent_crime_binary) 
+crime1%>%ggplot()+geom_density(aes(logit,color=violent_crime_binf,fill=violent_crime_binf), alpha=.4)+
+  theme(legend.position=c(.85,.85))+geom_vline(xintercept=0)+xlab("predictor (logit)")
+#ROC curve:
+library(plotROC) 
+ROCplot<-ggplot(crime1)+geom_roc(aes(d=violent_crime_binary,m=prob), n.cuts=0)
+ROCplot
+#Calculate AUC from ROC plot
+calc_auc(ROCplot)
+```
+*Controlling for manslaughter per 100k, for every 0.1 increase in Gini inequality index, the odds of being a state with high violent crime increases by a factor of 1.737(not significant, p=0.318, z=0.999). Controlling for Gini, for every 1 increase in manslaighter per 100k, the odds of being a state with high violent crime decreases by a factor of 0.6588(significant, p=0.000747, z=3.37). (Gini has a maximum value of 1, which is why I divided by 10.)*
+
+*The accuracy of my logistic regression model is 0.78. This means 0.78 of the states were correctly classified as either high or low violent crime states. The sensitivity(TPR) is 0.8, so 0.8 of the high violent crime were correctly classified. The specificity(TNR) is 0.76. This means the proportion of low violent crime states that were correctly classified was 0.76. Lastly, the precision is 0.769, so 0.769 of the states classified as high violent crime states actually are. The AUC of my logistic regression model is 0.848, which means it is somewhat good at predicting being a state with high violent crime.*
+
+*The AUC from my ROC curve is 0.848. This is the exact same as the AUC of my logistic regression model. As such, this is also somewhat good at predicting being a state with high violent crime. *
+
+
+### 6. (25 pts)
+```{R}
+fit2<-glm(violent_crime_binary~Pop_Density+Gini+Income+GDP+prisoners_100k+manslaughter_100k+robbery_100k+property_100k+burglary_100k, data=crime, family="binomial")
+prob1<-predict(fit2,type="response") 
+#In-sample classification diagnostics
+class_diag(prob1,crime$violent_crime_binary)
+#10-fold CV
+set.seed(1234)
+k=10 
+data1<-crime%>%sample_frac
+folds<-ntile(1:nrow(crime), n=10)
+diags<-NULL
+for(i in 1:k){
+train<-data1[folds!=i,]
+test<-data1[folds==i,]
+truth<-test$violent_crime_binary
+fit3<-glm(violent_crime_binary~Pop_Density+Gini+Income+GDP+prisoners_100k+manslaughter_100k+robbery_100k+property_100k+burglary_100k,data=train,family="binomial")
+probs<-predict(fit3,newdata = test,type="response")
+diags<-rbind(diags,class_diag(probs,truth))
+}
+summarize_all(diags,mean) 
+#LASSO:
+library(glmnet)
+y<-as.matrix(crime$violent_crime_binary) 
+x<-model.matrix(violent_crime_binary~Pop_Density+Gini+Income+GDP+prisoners_100k+manslaughter_100k+robbery_100k+property_100k+burglary_100k,data=crime)[,-1] 
+cv<-cv.glmnet(x,y,family="binomial")
+lasso<-glmnet(x,y,family="binomial",lambda=cv$lambda.1se)
+coef(lasso)
+#10-fold CV using Lasso variables:
+set.seed(1234)
+k=10 
+data2<-crime%>%sample_frac
+folds<-ntile(1:nrow(crime), n=10)
+diags<-NULL
+for(i in 1:k){
+train<-data2[folds!=i,]
+test<-data2[folds==i,]
+truth<-test$violent_crime_binary
+fit4<-glm(violent_crime_binary~manslaughter_100k+robbery_100k,data=train,family="binomial")
+probs<-predict(fit4,newdata = test,type="response")
+diags<-rbind(diags,class_diag(probs,truth))
+}
+summarize_all(diags,mean) 
+```
+*The in-sample accuracy is 0.78, so 0.78 of the states were correctly classified as either high or low violent crime states. The in-sample sensitivity was 0.8, so 0.8 of the high violent crime states were correctly classified. The in-sample specificity was 0.76, so 0.76 of the low violent crime states were correctly classified. The in-sample precision was 0.7692, so 0.7692 of the states classsified as high violent crime states actually are. Lastly, the in-sample AUC is 0.896, so it is good at predicting being a state with high or violent crime(AUC between 0.8-0.9).*
+
+*After performing a 10-fold CV with the same model, my average out of sample class diagnostics were: accuracy=0.76, sensitivity=0.7833, specificity=0.733, precision=0.7583, AUC=0.7667. The AUC level corresponds to being fair(AUC between 0.7-0.8). As such, this out of sample model is not good but fair at predicting whether a state has high violent crime or low violent crime. Compared to the in-sample metric, the out-of-sample is not as good because the out-of-sample AUC is lower. As stated before, the in-sample model is good at predicting whether a state has high or low violent crimes, and it is better at predicting than the out-of-sample model. *
+
+*After performing lasso on the model/variables, only manslaughters per 100k people and robberies per 100k people were retained as they were the only variables with a numeric value next to them. My other 6 variable were dropped. After performing a 10-fold CV using only the variables lasso selected, I got an AUC value of 0.8. Compared to the previous out of sample AUC, the AUC increased from 0.7667 to 0.8. As such, the AUC using only lasso selected variables is good at predictign whether a state has high or low violent levels of crimes, which is better than the fair level seen previously. However, compared to the in-sample model, the AUC decreased. The in-sample model had an AUC of 0.896, which is good and almost great at predicting if a state has high or low levels of violent crimes, which is better at predicting than the lasso selected out-of-sample model. *
+
+...
+
+
+
+
+

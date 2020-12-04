@@ -1,0 +1,144 @@
+---
+title: 'Project 1: Exploratory Data Analysis'
+author: "SDS348"
+date: ''
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+  word_document:
+    toc: no
+  pdf_document:
+    toc: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, fig.align = "center", warning = F, message = F,
+tidy=TRUE, tidy.opts=list(width.cutoff=60), R.options=list(max.print=100))
+```
+
+#### Matthew Lee, mtl967
+
+```{R}
+library(tidyverse)
+covid <- read_csv("/stor/home/mtl967/states.csv")
+health <- read_csv("/stor/home/mtl967/health.csv")
+
+```
+
+### 1. Introduction (4  pts)
+
+*My "covid" dataset is my first dataset. This dataset was aquired through kaggle, and the source of the data is from Johns Hopkins University. As a pre-med, I am very interested in health issues, and Covid-19 has been the most consequential disease in a long time. I wanted to explore Covid-19 data, and potentially pair this data with another dataset that contains other health information or socioeconomic data. Furthermore, the data is per state(observations), which is what I wanted my observations to be. This dataset includes the following variables: the abbreviation of the State name, the number of people tested, the number of positive tests, and the number of deaths. I knew that with this dataset, I could play around with different variables and calculate the percentage of positive tests, deaths per 100k people, and potentially draw other variables out.*
+
+*My second dataset is my "health" dataset. This dataset was also aquired through kaggle, and the source of the data is from various sources such as the CDC, kff.org, and americashealthrankings.org. This dataset was extremely interesting because it includes various health and societal measures for each state. This serves as a very good dataset to merge with my Covid-19 dataset because it includes many variables that go beyond just Covid-19, but could also potentially impact the numbers seen in my Covid-19 dataset. The variables include: State Name, State Abbreviation, Population, Population Density(people per meter squared), Gini Inequality index, Number of ICU beds, Income per capita, GDP, Unemployment(Feb, 2020), Sex Ratio(male/female), Smoking Rate,  Flu deaths per 100,000 people, Respiratory Disease Deaths per 100,000 people, Number of Physicians and Hospitals, Pollution, Health Spending per capita, Average Temperature, Urbanization, and Age groups. I expect there to be a positive association between Gini inequality and Covid-19 deaths because it seems like a state with more inequality may have a higher percentage of people unable to afford or access proper treatment for Covid-19. Furthermore, I expect to see a negative association between the different death rates per 100,000(Covid, Flu, Respiratory) and Health Spending per capita and perhaps Income per capita. I imagine a state that spends more money on health will be better able to treat patients, resulting in lower death rates. There may be positive associations between Covid-19 Deaths and population density/urbanization as diseases can spread more easily when people are closer together. *
+
+### 2. Joining/Merging (8 pts)
+
+
+```{R}
+data<-inner_join(covid, health, by=c("name"="state_abb"))
+glimpse(data)
+
+```
+*I used the inner_join dplyr function to join my datasets. There were 52 observations in my covid dataset and 51 observations in my health dataset. Firstly, inner join will look in the "name" column of my covid dataset and the "state_abb" column of my health dataset. It will then combine the data frames based on a common state abbreviation in either column and drop and rows that do not have a match. My covid dataset had data for Puerto Rico, but my health dataset did not. I wanted to exclude Puerto Rico because it is an unincorporated US territory, so inner_join was the perfect join to use as it drops any row in either dataset that does not have a match. In this case, the only row without a match was Puerto Rico, so it was dropped from my joined dataset. After joining, I had 51 observations.*
+
+*Since Puerto Rico is not a state or Federal District, I do not believe this was an issue. A potential issue with inner join is that it would have dropped any state without an abbreviation listed. However, both datasets had every state abbrevation, so none of the states/DC were dropped. If I wanted to include Puerto Rico, I could have used a different join such as full_join.*
+
+### 3. Wrangling (40 pts)
+
+```{R}
+#Generating three variables using mutate:
+data<-data%>%mutate(deaths_per_100k=((deaths/Population)*100000))
+data<-data%>%mutate(deaths_percentile=percent_rank(deaths_per_100k))
+data<-data%>%mutate(positive_percent=(positive/tested)*100)
+#Covid Deaths per 100,000 people arranged from greatest to least:
+data%>%select(State, deaths_per_100k)%>%arrange(desc(deaths_per_100k))
+#Creating a categorical variable based on population density
+data<-data%>%mutate(density=ifelse(Pop_Density<=median(Pop_Density), "not_dense", "dense"))
+#Creating a categorical variable based on income:
+data<-data%>%mutate(income_cat=ifelse(Income<=median(Income), "low_income", "high_income"))
+#Creating a categorical variable based on if the flu deaths per 100,000 is lower/equal to the median or higher.
+data<-data%>%mutate(flu_deaths_cat=ifelse(Flu_Deaths<=median(Flu_Deaths), "low", "high"))
+#Mean Covid-19 deaths per 100,000 grouped by low or high flu deaths per 100,000:
+data%>%group_by(flu_deaths_cat)%>%summarize(mean=mean(deaths_per_100k), n())
+#Median Respiratory deaths per 100,000 filtered by High Temperature and Grouped by Density: 
+data%>%filter(Temperature>(mean(Temperature)))%>% group_by(density)%>%summarize(mean=mean(Respiratory_Deaths), n())
+#Mean, max, min, and mad of positive test percentage grouped by both Income and Density:
+data%>%group_by(income_cat, density)%>% summarize(mean=mean(positive_percent), max=max(positive_percent), min=min(positive_percent), mad=mad(positive_percent))
+#Calculating the quantiles for GDP if the population is greater than the mean:
+data%>%filter(Population>(mean(Population)))%>%summarize(quantile=quantile(GDP))
+#Calculating the standard deviation and median number of hospitals grouped by density:
+data%>%group_by(density)%>%summarize(sd=sd(Hospitals), median=median(Hospitals), min=min(Hospitals))
+#Calculating the mean, variance, and median of the death percentile grouped by the proportion of the population aged 55+:
+data%>%mutate(older=ifelse(Age_55_over>mean(Age_55_over), "More_Old_prop", "Less_Old_prop"))%>%group_by(older)%>%summarize(mean=mean(deaths_percentile), var=var(deaths_percentile), median=median(deaths_percentile))
+```
+*Firstly, I used mutate to create three variables: deaths_per_100k is the Covid-19 deaths per 100,000 people(per state). Next, I have deaths_percentile, which calculates the percentile each state’s deaths_per_100k is. Finally, I have positive_percent, which is the percent of tests that come back positive. Next, I took my whole dataset, selected for State and deaths_per_100k, and I arranged the states from greatest to least Covid-19 deaths per 100,000 people. New Jersey had the most Covid-19 deaths per 100,000 with 180.58 people, and Massachusetts and New York followed with 133.52 and 131.31, respectively. I heard on the news how much the North Eastern states such as New York and New Jersey are struggling with Covid-19, so I was not surprised to see them at the top. I then created a categorical variable called density by dichotomizing my numeric “Pop_density” with ifelse where population densities below or above the median population density were sorted into “not_dense” and “dense” categories, respectively. I also made two other categorical variables using similar processes with “flu_deaths” and “Income”. With this, I grouped my data by the categorical flu deaths variable(high or low) and used summarize to find the mean Covid-19 deaths per 100,000 and the number in each category. The high flu deaths category surprisingly had a mean Covid-19 deaths per 100,000 as 49.12, which was lower than the low flu deaths category with a mean of 54.55 deaths per 100,000. I expected states with higher flu deaths to also have higher Covid-19 deaths, but this was not the case. I calculated the mean, median, and variance Covid-19 deaths percentile for states grouped by if states had a higher proportion of age 55+ than the mean or a lower proportion. Interestingly, states with a higher proportion of age 55+ than the national average had a median of 0.54, whereas lower had a median of 0.47. There was very little difference in the mean, which was surprising because Covid-19 has a higher death rate with older individuals. I expected to see states with a higher proportion of age 55+ to have a much higher Covid-19 deaths percentile, which was not the case. *
+
+*I then filtered my data to only include states with a mean temperature above the mean temperature in the US then grouped by density(categorical, high or low) and summarized the mean Respiratory Deaths and count. Hot states with a low density(9 states) had a mean respiratory deaths per 100,000 of 52.33, and dense states(14) had a mean of 38.07 respiratory deaths per 100,000. I was a little surprised by this result, but I assume more dense states may have more physicians or hospitals available. Next, I grouped my dataset by two categorical variables, “income_cat” and “density”, which are both high or low depending on if it is over or under the median. Then, I used summarize to find the mean, max, min, and mad(median absolute deviation) for the variable “positive_percent.” Interestingly, states with a lower income per capita had a higher percentage of Covid-19 tests to come back positive, and the highest mean(10.49%) and max(32.588%) was the low income, dense category. The smallest min was in the high income, not dense category with 1.08% of the tests coming back positive in one of the observations. Another interesting thing I saw was when I grouped by the categorical density variable then summarized the standard deviation, median, and min hospitals. As I predicted, dense states had a median number of hospitals of 105 whereas not dense states had a median number of hospitals at 72. However, the standard deviation for dense states was greater at 115, so it varied more, which is seen as the minimum for a dense state was 7 hospitals whereas the minimum for a not dense state was 14. It makes sense that denser states would have more hospitals as the states would be more tightly packed with people. *
+
+
+
+### 4. Tidying: Rearranging Wide/Long (8 pts)
+
+
+```{R}
+#Pivot Longer then Wider
+data%>%mutate(unemployment_cat=ifelse(Unemployment>mean(Unemployment), "high_unemployment", "low_unemployment"))%>%group_by(unemployment_cat)%>%summarize_if(is.numeric, c(mean, sd))%>%pivot_longer(2:53)%>%pivot_wider(names_from="unemployment_cat")%>%rename("Variable Descriptive Statistic"="name", "High Unemployment"="high_unemployment", "Low Unemployment"="low_unemployment")
+
+```
+*Since my datasets were already tidy, I used pivot_longer and pivot_wider in order to rearrange a table in a better format. First, I created a categorical variable using mutate called "unemployment_cat," which places any state with a higher unemployment than the mean in "high_unemployment" and any state with a lower unemployment in "low_unemployment." Then, I grouped the states by this new variable and used summarize_if to compute the mean and sd for every variable. This results in a very wide table with 53 columns, so I first used pivot_longer to put all of these new columns into a single column, which reduced the table to 3 columns. However, the unemployment variable column was long, so I used pivot_wider in order to place high_unemployment and low_unemployment in separate columns rather than be combined into one. This resulted in a better organized table. I also renamed my "name" column to "Variable Descriptive Statistic" because each row has the variable and the descriptive statistic measured. I also removed the underscore in the high_unemployment and low_unemployment columns using rename. Now, I have a table where one can easily compare the High Unemployment and Low Unemployment states for each variable, and there are only 3 columns.*
+
+### 5. Visualizing (30 pts)
+
+
+```{R fig.height=12, fig.width=12}
+#Correlation Matrix
+cormat<-data%>%select_if(is.numeric)%>%cor(use="pair")
+tidycor<-cormat%>%as.data.frame%>%rownames_to_column("var1")%>%pivot_longer(-1, names_to="var2", values_to="correlation")
+#Creating a correlation heatmap:
+tidycor%>%ggplot(aes(var1, var2, fill=correlation))+geom_tile()+scale_fill_gradient2(low="red", mid="white", high="blue")+geom_text(aes(label=round(correlation, 2)), color="black", size=4) + theme(axis.text.x=element_text(angle=90, hjust=1))+xlab("")+ylab("")
+```
+*Firstly, I created a correlation heatmap with my numeric variables. One interesting correlation is that Covid-19 deaths per 100,000 seems to be strongly positively correlated(0.61) with the Gini inequality coefficient, which means that states with higher inequality tend to have more Covid-19 deaths per 100,000. Furthermore, Covid-19 deaths per 100,000 is positively correlated with the urbanization of the state, which makes sense as cities are very dense. Flu deaths are positively correlated to respiratory deaths as well as the smoking rate. Interestingly, flu deaths have zero correlation with Covid-19 deaths, which is the opposite of what I expected as it seems that states with less Flu deaths may have better medical systems that could also treat Covid-19. GDP is strongly positively correlated(0.83) with the proportion of population ages 26-54, which makes sense as this is the age group that tends to work the most and make the most money. As expected, health spending is positively correlated with GDP(0.58) as states with a higher GDP likely have more money they can put towards health. Although certain things like hospitals and Covid-19 deaths appear to be postiviely correlated(0.66), these variables give the total number rather than per capita. As such, a populous state like California will have many hospitals and many deaths whereas a state like Wyoming will have less hospitals and less total deaths. Another example of this is physicians seems to be strongly correlated(0.89) with Covid-19 deaths. However, this is the same case as hospitals where physicians is just the total number of physicians in the state rather than a per population measurement.*
+
+*Another interesting correlation is seen as pollution is positively correlated with population(0.57). This is expected as more people in a state would probably lead to more pollution levels. Respiratory deaths is strongly correlated with smoking rate(0.78), which is again expected as smoking causes lung cancer. However, urbanization seems to be negatively correlated(-0.63) with respiratory deaths and smoking rate(-0.61). This is surprising as I assumed people in urban areas are exposed to worse air quality and also smoke more. Perhaps, cities/apartments often have restrictions on where one can smoke, so the smoking rate would be less non-city areas, leading to less respiratory deaths. Gini inequality also seems to be strongly negatively correlated with sex ratio(male/female), so states with more females have more inequality. *
+
+```{R}
+#ggplot 1: Respiratory Deaths vs. Percantage of Adult Smokers:
+ggplot(data, aes(Smoking_Rate, Respiratory_Deaths, color=Income))+geom_point(aes(size=Health_Spending))+scale_color_gradient(low="yellow", high="dark green")+scale_y_continuous(breaks=seq(15,70, 5))+scale_x_continuous(breaks=seq(0,30, 3))+xlab("Percent Adult Smokers(%)")+ylab("Respiratory Deaths(per 100k people)")+ggtitle("Respiratory Deaths vs. Percentage of Adult Smokers")+geom_smooth(method="lm", se=FALSE)+labs(color="Income per capita($)", size="Health Spending per capita($)")
+
+#ggplot 2: Covid-19 Deaths by Inequality Bar Graph
+data%>%mutate(income_cat = str_replace(income_cat, "high_income", "High Income"))%>%mutate(income_cat = str_replace(income_cat, "low_income", "Low Income"))%>%mutate(inequality=ifelse(Gini<=median(Gini), "Low Inequality", "High Inequality"))%>%ggplot(aes(inequality,  fill=income_cat))+geom_bar(aes(y=deaths_per_100k),stat="summary", fun=mean)+ scale_y_continuous(breaks=seq(0,160, 10))+ylab("Covid-19 Deaths (per 100k people)") + xlab("Inequality (Gini Index)") + labs(fill="Income(grouped by per capita)")+ggtitle("Covid-19 Deaths by Inequality")+ scale_fill_brewer()
+
+```
+*Firstly, I wanted to make a plot of Respiratory deaths per 100,000 people vs. Percentage of adult smokers as this seemed to be strongly positively correlated in my heatmap. As expected, there is a clear positive correlation between the respiratory deaths per 100,000 and the percentage of adult smokers. As such, states with a higher percentage of adult smokers are expected to have more respiratory deaths. Furthermore, I mapped income per capita to color, and it seems like states with a higher income per capita tend to be on the lower left side of the ggplot. This shows that states with ahigher income per capita seem to have a lower percentage of adult smokers as well as respiratory deaths per 100,000. States on the top right of my graph seem to be more yellow colored, indicating they have less income per capita and have a higher percentage of adult smokers and more respiratory deaths. I also mapped health spending per capita to the size of the points on the ggplot. It does seem like larger points tend to be more towards the middle or lower left of my graph. This means states with more health spending per capita seem to have medium to low percent of adult smokers and respiratory deaths per 100,000. Alternatively, the top right of my graph seems to be smaller sized points. This means that those states have lower health spending per capita and also higher respiratory deaths and percentage of adult smokers.*
+
+*For the next graph, I first created a new categorical variable, "income_cat," and sorted states into either high inequality or low inequality based on if their Gini inequality index was higher or lower than the median Gini inequality index. If a state's Gini inequality was equal or lower than the median Gini inequality, it was sorted as low inequality. These two categories went on the X-axis and the mean Covid-19 deaths per 100,000 went on the Y-axis. It seems that states grouped in high inequality have a higher mean Covid-19 deaths per 100,000 compared to states grouped in low inequality. Based on the bar graphs, the difference in mean seems quite large. This makes sense as the heatmap showed that the Gini index and Covid-19 deaths per 100,000 were positively correlated(0.63), so states with more inequality also tended to have higher Covid-19 deaths. I also filled the bars with income category, where states with a higher income per capita than the median income were placed in high income. It seems like states with high inequality had a higher proportion of states also listed as high income per capita. This is shown as the light blue color takes up almost 2/3 of the high inequality bar. This does make sense as states with a higher income per capita may be due to a rich minority, and this would also likely come with large inequality in those states between the richest and the poorest. However, states grouped in low inequality seem to have an equal split between states grouped in either income category.*
+
+### 6. Dimensionality Reduction (20 pts) 
+
+```{R fig.height=10, fig.width=10}
+library(cluster)
+library(plotly)
+library(GGally) 
+pam_dat<-data%>%select_if(is.numeric)%>%select(-deaths_percentile)
+sil_width<-vector()
+for(i in 2:10){
+  pam_fit<-pam(pam_dat, k=i)
+  sil_width[i]<-pam_fit$silinfo$avg.width
+}
+ggplot()+geom_line(aes(x=1:10, y=sil_width))+scale_x_continuous(name="k", breaks=1:10)+ggtitle("Silhouette Width vs. k")+ylab("Silhouette Width")
+pam1<-pam_dat%>%scale%>%pam(3)
+pam_clust<-pam_dat%>%mutate(cluster=as.factor(pam1$clustering))
+data%>%slice(pam1$id.med)
+plot(pam1,which=2)
+#Visualizeing 3 variables and in clustered based on 25 variables: 
+pam_clust%>%plot_ly(x= ~deaths_per_100k, y= ~Health_Spending, z= ~Gini, color= ~cluster, type="scatter3d", mode="markers", symbols=c('circle','x','o'))%>%layout(autosize=F,width=900, height=400)
+#Visualizing 2 variables, but in clusters based on 25 variables
+ggplot(pam_clust, aes(x=deaths_per_100k, y=Health_Spending, color=cluster))+geom_point(size=4)+ ggtitle("PAM Cluster Analysis")+xlab("Covid-19 Deaths (per 100k people)")+ylab("Health Spending per capita($)")
+pam_clust%>%ggpairs(columns=c("deaths_per_100k", "positive_percent", "Flu_Deaths", "Smoking_Rate", "Respiratory_Deaths", "Gini", "Pop_Density"),aes(color=cluster))
+```
+*First, I selected all of my numeric variables besides deaths_percentile as that was created from deaths_per_100k, so I selected 25 variables. Then, I used Silhouette width in order to pick the number of clusters with PAM. I plotted the silhouette width index vs. each k value. 3 clusters had the highest average silhouette width, so I chose 3 clusters. The highest average silhouette width means 3 clusters will be the most cohesive and separated. Then, I scaled my numeric variables and ran a cluster analysis. I made a silhouette plot of PAM in order to see the fit. My average silhouette width was 0.13, which means that no substantial structure was found. In fact, each of my 3 clusters had a silhouette width 0.25 or under. Since my average silhouette width was low, this means the clusters were less cohesive and less separated than something with a higher silhouette width.*
+
+*I also made two plots in order to visualize my clusters. First, I visualized deaths_per_100k, Health_Spending, and Gini clustered based on 25 variables. Firstly, when visualizing in 3D, it appears that the clusters are not well separated. Cluster 3 seemed to have high Gini and Covid-deaths per 100k and health spending was varied. Cluster 1 had low Covid-19 deaths, low Gini, but spread out health spending. Cluster 2 had low Covid-19 deaths, and was more towards the middle in health spending and Gini. In my second plot, I visualized Covid-19 deaths per 100k and Health spending clustered based on 25 variables. I chose those two variables as I was interested to see if the different clusters/states would show clear patterns between the Covid-19 deaths and Health spending. Overall, it seems like there may be a very weak correlation between ealth Spending per capita and Covid-19 deaths per 100,000. Despite clustering on 25 variables, the clusteres do seem to generally be in a certain area. For instance, cluster 1 tends to be have low Covid-19 deaths per 100,000, regardless of the health spending. Cluster 3 seems to be be states with higher Covid-19 deaths per 100,000 than cluster 1 states with the health spending once again being variable. Cluster 2 seems to have a middle Covid-19 deaths per 100,000 where it is higher than most of cluster 1 but lower than most of cluster 3. Lastly, I wanted to visualize the pairwise combinations of variables I was interested in. It was interesting to see how the different clusters still seeemed to at least somewhat group together despite visualizing different pairs.*

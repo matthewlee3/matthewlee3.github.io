@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Projects on Matthew Lee</title>
+    <link>/project/</link>
+    <description>Recent content in Projects on Matthew Lee</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-US</language><atom:link href="/project/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Project 1: Exploratory Data Analysis</title>
+      <link>/project/project1/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      
+      <guid>/project/project1/</guid>
+      <description>Matthew Lee, mtl967 library(tidyverse) covid &amp;lt;- read_csv(&amp;quot;/stor/home/mtl967/states.csv&amp;quot;) health &amp;lt;- read_csv(&amp;quot;/stor/home/mtl967/health.csv&amp;quot;)  1. Introduction (4 pts) My &amp;quot;covid&amp;quot; dataset is my first dataset. This dataset was aquired through kaggle, and the source of the data is from Johns Hopkins University. As a pre-med, I am very interested in health issues, and Covid-19 has been the most consequential disease in a long time. I wanted to explore Covid-19 data, and potentially pair this data with another dataset that contains other health information or socioeconomic data.</description>
+    </item>
+    
+    <item>
+      <title>Project 2: Modeling, Testing, and Predicting</title>
+      <link>/project/project2/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      
+      <guid>/project/project2/</guid>
+      <description>Modeling My Data: library(tidyverse) crime &amp;lt;- read_csv(&amp;quot;/stor/home/mtl967/project2data.csv&amp;quot;) #Creating categorical variable with 2 groups: quantile(crime$Gini) ## 0% 25% 50% 75% 100% ## 0.406300 0.451975 0.467350 0.478900 0.522900 crime&amp;lt;-crime%&amp;gt;%mutate(inequality_cat=ifelse(Gini&amp;gt;=0.4789, &amp;quot;high&amp;quot;, ifelse(Gini&amp;lt;=0.4789 &amp;amp; 0.46735&amp;lt;=Gini, &amp;quot;med&amp;quot;, &amp;quot;low&amp;quot;))) #Creating a binary variable: crime&amp;lt;-crime%&amp;gt;%mutate(violent_per_100k=(violent_crime_total/Population)*100000)%&amp;gt;%mutate(violent_crime_binary=ifelse(violent_per_100k&amp;gt;=median(violent_per_100k), 1, 0)) #Create per 100k for each crime: crime&amp;lt;-crime%&amp;gt;%mutate(prisoners_100k=(prisoner_count/Population)*100000, manslaughter_100k=(murder_manslaughter/Population)*100000, robbery_100k=(robbery/Population)*100000, agg_assault_100k=(agg_assault/Population)*100000, property_100k=(property_crime_total/Population)*100000, burglary_100k=(burglary/Population)*100000) #Class Diag: #Class Diag: class_diag&amp;lt;-function(probs,truth){ tab&amp;lt;-table(factor(probs&amp;gt;.5,levels=c(&amp;quot;FALSE&amp;quot;,&amp;quot;TRUE&amp;quot;)),truth) acc=sum(diag(tab))/sum(tab) sens=tab[2,2]/colSums(tab)[2] spec=tab[1,1]/colSums(tab)[1] ppv=tab[2,2]/rowSums(tab)[2] f1=2*(sens*ppv)/(sens+ppv) if(is.numeric(truth)==FALSE &amp;amp; is.logical(truth)==FALSE){ truth&amp;lt;-as.numeric(truth)-1} #CALCULATE EXACT AUC ord&amp;lt;-order(probs, decreasing=TRUE) probs &amp;lt;- probs[ord]; truth &amp;lt;- truth[ord] TPR=cumsum(truth)/max(1,sum(truth)) FPR=cumsum(!</description>
+    </item>
+    
+  </channel>
+</rss>
